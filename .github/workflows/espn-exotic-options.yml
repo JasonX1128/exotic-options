@@ -1,0 +1,86 @@
+name: Experimental ESPN exotic option prices
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/espn-exotic-options.yml']
+  workflow_dispatch:
+    inputs:
+      league:
+        description: ESPN sport/league path
+        required: true
+        default: football/college-football
+        type: string
+      date:
+        description: YYYYMMDD
+        required: true
+        default: '20261017'
+        type: string
+      teams:
+        description: Semicolon-separated pairs, e.g. ALA,TENN;AUB,UGA
+        required: true
+        default: ALA,TENN;AUB,UGA;MIZ,MISS
+        type: string
+      minutes:
+        description: Collection duration in minutes
+        required: true
+        default: '90'
+        type: string
+  schedule:
+    - cron: '0 22 20 10 *'
+permissions:
+  contents: read
+jobs:
+  quote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Select live matchups
+        id: args
+        env:
+          EVENT: ${{ github.event_name }}
+          LEAGUE: ${{ inputs.league }}
+          GAME_DATE: ${{ inputs.date }}
+          TEAMS: ${{ inputs.teams }}
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          if [[ "$EVENT" == 'push' ]]; then
+            echo 'league=football/college-football' >> "$GITHUB_OUTPUT"
+            echo 'date=20261017' >> "$GITHUB_OUTPUT"
+            echo 'teams=ALA,TENN;AUB,UGA;MIZ,MISS' >> "$GITHUB_OUTPUT"
+            echo 'minutes=100' >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT" == 'schedule' ]]; then
+            if [[ "$(date -u +%Y%m%d)" != "20261020" ]]; then
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+            else
+              echo 'league=basketball/nba' >> "$GITHUB_OUTPUT"
+              echo 'date=20261020' >> "$GITHUB_OUTPUT"
+              echo 'teams=PHI,NYK;BOS,DET' >> "$GITHUB_OUTPUT"
+              echo 'minutes=270' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "league=$LEAGUE" >> "$GITHUB_OUTPUT"
+            echo "date=$GAME_DATE" >> "$GITHUB_OUTPUT"
+            echo "teams=$TEAMS" >> "$GITHUB_OUTPUT"
+            echo "minutes=$MINUTES" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Live polling and payoff pricing
+        if: steps.args.outputs.skip != 'true'
+        env:
+          GAME_LEAGUE: ${{ steps.args.outputs.league }}
+          GAME_DATE: ${{ steps.args.outputs.date }}
+          GAME_TEAMS: ${{ steps.args.outputs.teams }}
+          GAME_MINUTES: ${{ steps.args.outputs.minutes }}
+        run: |
+          python espn-options/quote_engine.py --league "$GAME_LEAGUE" --date "$GAME_DATE" --teams "$GAME_TEAMS" --minutes "$GAME_MINUTES" --interval 20 --samples 1200
+      - name: Save option prices
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experimental-options-${{ github.run_id }}
+          path: options-results/
+          retention-days: 30
+          if-no-files-found: warn
