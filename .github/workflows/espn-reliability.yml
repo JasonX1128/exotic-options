@@ -1,0 +1,86 @@
+name: ESPN feed reliability
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/espn-reliability.yml']
+  workflow_dispatch:
+    inputs:
+      league:
+        description: League path
+        required: true
+        type: choice
+        options: [football/nfl, basketball/nba]
+      date:
+        description: ESPN game date YYYYMMDD
+        required: true
+        type: string
+      teams:
+        description: Team codes comma-separated (e.g. PHI,NYK)
+        required: true
+        type: string
+  schedule:
+    - cron: '0 19 18 10 *'
+    - cron: '30 18 20 10 *'
+    - cron: '30 22 20 10 *'
+permissions:
+  contents: read
+jobs:
+  record:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.run_started_at != '' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure game
+        id: config
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          LEAGUE: ${{ inputs.league }}
+          DATE: ${{ inputs.date }}
+          TEAMS: ${{ inputs.teams }}
+        run: |
+          if [[ "$EVENT" == push ]]; then
+            echo "league=football/college-football" >> "$GITHUB_OUTPUT"
+            echo "date=20261017" >> "$GITHUB_OUTPUT"
+            echo "teams=ALA,TENN" >> "$GITHUB_OUTPUT"
+            echo "minutes=240" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT" == workflow_dispatch ]]; then
+            echo "league=$LEAGUE" >> "$GITHUB_OUTPUT"
+            echo "date=$DATE" >> "$GITHUB_OUTPUT"
+            echo "teams=$TEAMS" >> "$GITHUB_OUTPUT"
+            echo 'minutes=300' >> "$GITHUB_OUTPUT"
+          elif [[ "$(date -u +%Y)" != "2026" ]]; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$SCHEDULE" == '0 19 18 10 *' && "$(date -u +%Y%m%d)" == "20261018" ]]; then
+            echo 'league=football/nfl' >> "$GITHUB_OUTPUT"
+            echo 'date=20261018' >> "$GITHUB_OUTPUT"
+            echo 'teams=BUF,LV' >> "$GITHUB_OUTPUT"
+            echo 'minutes=300' >> "$GITHUB_OUTPUT"
+          elif [[ "$SCHEDULE" == '30 18 20 10 *' && "$(date -u +%Y%m%d)" == "20261020" ]]; then
+            echo 'league=basketball/nba' >> "$GITHUB_OUTPUT"
+            echo 'date=20261020' >> "$GITHUB_OUTPUT"
+            echo 'teams=BOS,DET' >> "$GITHUB_OUTPUT"
+            echo 'minutes=270' >> "$GITHUB_OUTPUT"
+          elif [[ "$SCHEDULE" == '30 22 20 10 *' && "$(date -u +%Y%m%d)" == "20261020" ]]; then
+            echo 'league=basketball/nba' >> "$GITHUB_OUTPUT"
+            echo 'date=20261020' >> "$GITHUB_OUTPUT"
+            echo 'teams=PHI,NYK' >> "$GITHUB_OUTPUT"
+            echo 'minutes=300' >> "$GITHUB_OUTPUT"
+          else
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Collect and reconcile
+        if: steps.config.outputs.skip != 'true'
+        run: python espn-reliability/collector.py --league "${{ steps.config.outputs.league }}" --date "${{ steps.config.outputs.date }}" --teams "${{ steps.config.outputs.teams }}" --minutes "${{ steps.config.outputs.minutes }}"
+      - name: Upload raw data and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: espn-feed-${{ github.run_id }}
+          path: results/
+          if-no-files-found: ignore
+          retention-days: 30
