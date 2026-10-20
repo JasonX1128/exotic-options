@@ -1,8 +1,5 @@
 name: Experimental ESPN exotic option prices
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/espn-exotic-options.yml']
   workflow_dispatch:
     inputs:
       league:
@@ -26,13 +23,14 @@ on:
         default: '90'
         type: string
   schedule:
-    - cron: '0 22 20 10 *'
+    - cron: '45 18 20 10 *' # BOS @ DET
+    - cron: '45 22 20 10 *' # PHI @ NYK
 permissions:
   contents: read
 jobs:
   quote:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,24 +40,27 @@ jobs:
         id: args
         env:
           EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
           LEAGUE: ${{ inputs.league }}
           GAME_DATE: ${{ inputs.date }}
           TEAMS: ${{ inputs.teams }}
           MINUTES: ${{ inputs.minutes }}
         run: |
-          if [[ "$EVENT" == 'push' ]]; then
-            echo 'league=football/college-football' >> "$GITHUB_OUTPUT"
-            echo 'date=20261017' >> "$GITHUB_OUTPUT"
-            echo 'teams=ALA,TENN;AUB,UGA;MIZ,MISS' >> "$GITHUB_OUTPUT"
-            echo 'minutes=100' >> "$GITHUB_OUTPUT"
-          elif [[ "$EVENT" == 'schedule' ]]; then
+          if [[ "$EVENT" == 'schedule' ]]; then
             if [[ "$(date -u +%Y%m%d)" != "20261020" ]]; then
               echo 'skip=true' >> "$GITHUB_OUTPUT"
-            else
+            elif [[ "${SCHEDULE}" == '45 18 20 10 *' ]]; then
               echo 'league=basketball/nba' >> "$GITHUB_OUTPUT"
               echo 'date=20261020' >> "$GITHUB_OUTPUT"
-              echo 'teams=PHI,NYK;BOS,DET' >> "$GITHUB_OUTPUT"
+              echo 'teams=BOS,DET' >> "$GITHUB_OUTPUT"
               echo 'minutes=270' >> "$GITHUB_OUTPUT"
+            elif [[ "${SCHEDULE}" == '45 22 20 10 *' ]]; then
+              echo 'league=basketball/nba' >> "$GITHUB_OUTPUT"
+              echo 'date=20261020' >> "$GITHUB_OUTPUT"
+              echo 'teams=PHI,NYK' >> "$GITHUB_OUTPUT"
+              echo 'minutes=270' >> "$GITHUB_OUTPUT"
+            else
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
             fi
           else
             echo "league=$LEAGUE" >> "$GITHUB_OUTPUT"
