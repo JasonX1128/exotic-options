@@ -1,0 +1,28 @@
+name: ESPN historical play-by-play validation
+# Re-run with period-clock audit diagnostics
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/espn-historical-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate completed NBA and CFB play-by-play
+        run: python espn-reliability/historical_validate.py
+      - name: Upload results even on validation failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-validation-${{ github.run_id }}
+          path: historical-validation/
+          if-no-files-found: warn
+          retention-days: 30
